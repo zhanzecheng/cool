@@ -2,32 +2,31 @@
 # @Time    : 2018/3/20 下午2:15
 # @File    : imgPreprocess.py
 
-import Image
-import sys
+import time
+import string
+from PIL import Image, ImageChops
+from PIL.GifImagePlugin import getheader, getdata
+import os
+
+root_dir = '/home/zzc/cool/data/sohu'
 
 
-root_dir = '/home/zzc/cool/'
+## 将gif图像每一帧拆成独立的位图
+def gif2images(filename, distDir='.', type='bmp'):
+    if not os.path.exists(distDir):
+        os.mkdir(distDir)
+    print 'spliting', filename,
+    im = Image.open(filename)
+    im.seek(0)  # skip to the second frame
+    cnt = 0
+    type = string.lower(type)
+    mode = 'RGB'  # image modea
+    if type == 'bmp' or type == 'png':
+        mode = 'P'  # image mode
+    im.convert(mode).save(distDir + '/%d.' % cnt + type)
+    print '\n', filename, 'has been splited to directory: [', distDir, ']'
+    return cnt
 
-def processImage(infile):
-    try:
-        im = Image.open(infile)
-    except IOError:
-        print "Cant load", infile
-        sys.exit(1)
-    i = 0
-    mypalette = im.getpalette()
 
-    try:
-        while 1:
-            im.putpalette(mypalette)
-            new_im = Image.new("RGBA", im.size)
-            new_im.paste(im)
-            new_im.save('foo'+str(i)+'.png')
 
-            i += 1
-            im.seek(im.tell() + 1)
-
-    except EOFError:
-        pass # end of sequence
-
-processImage(root_dir + 'data')
+frames = gif2images('P0009015.GIF', distDir='tmp', type='JPEG')
