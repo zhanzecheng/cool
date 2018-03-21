@@ -2,8 +2,6 @@ from keras.models import Model
 from keras.layers import Input, Dense, Flatten
 from keras.layers import Dropout
 from keras.optimizers import Adam
-from keras.applications.vgg16 import VGG16
-from keras.callbacks import EarlyStopping
 from keras.applications.resnet50 import ResNet50, preprocess_input
 from keras.preprocessing import image
 import pandas as pd
@@ -61,11 +59,6 @@ def batch_iter(dir, train, batch_size, epochs, shuffle=True):
                     if os.path.exists(tmp_path):
                         path = tmp_path
                         break
-                # for i in range(1, 4):
-                #     tmp_path = dir + 'Pic_info_train.part' + str(i) + '/' + name
-                #     if os.path.exists(tmp_path):
-                #         path = tmp_path
-                #         break
 
                 try:
                     img = image.load_img(path, target_size=(224, 224))
@@ -83,14 +76,13 @@ def batch_iter(dir, train, batch_size, epochs, shuffle=True):
 
 def get_model():
     input_image = Input(shape=(224, 224, 3), name='image_input')
-    # base_model = VGG16(input_tensor=input_image, weights='imagenet', include_top=False)
     base_model = ResNet50(input_tensor=input_image, weights='imagenet', include_top=False)
     dense_image1 = Dense(256, activation='relu', name='dense1')(base_model.output)
     dropout_image1 = Dropout(0.3, name='dropout1')(dense_image1)
     flatten = Flatten()(dropout_image1)
     predictions = Dense(1, activation='sigmoid', name='dense2')(flatten)
     res_model = Model(inputs=[input_image], outputs=[predictions])
-    optimizer = Adam(0.001, 0.9, 0.999, None, 0.000001)
+    optimizer = Adam(0.0001, 0.9, 0.999, None)
     res_model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
     return res_model
 
