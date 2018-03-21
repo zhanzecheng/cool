@@ -83,14 +83,14 @@ def batch_iter(dir, train, batch_size, epochs, shuffle=True):
 
 def get_model():
     input_image = Input(shape=(224, 224, 3), name='image_input')
-    base_model = VGG16(input_tensor=input_image, weights='imagenet', include_top=False)
-    # base_model = ResNet50(input_tensor=input_image, weights='imagenet', include_top=False)
+    # base_model = VGG16(input_tensor=input_image, weights='imagenet', include_top=False)
+    base_model = ResNet50(input_tensor=input_image, weights='imagenet', include_top=False)
     dense_image1 = Dense(256, activation='relu', name='dense1')(base_model.output)
     dropout_image1 = Dropout(0.3, name='dropout1')(dense_image1)
     flatten = Flatten()(dropout_image1)
     predictions = Dense(1, activation='sigmoid', name='dense2')(flatten)
     res_model = Model(inputs=[input_image], outputs=[predictions])
-    optimizer = Adam(0.0001, 0.9, 0.999, None, 0.000001)
+    optimizer = Adam(0.001, 0.9, 0.999, None, 0.000001)
     res_model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
     return res_model
 
