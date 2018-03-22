@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 image_dir = "/home/zzc/cool/data/sohu/train/"
 image_input_shape = (224, 224, 3)
@@ -100,6 +100,31 @@ def predict_batch_iter(dir, test, batch_size):
             validate_images.extend(x)
         yield np.array(validate_images)
 
+def validation_batch_iter(dir, validation, batch_size):
+    """ Generates a batch iterator"""
+    data_size = len(validation['new_name'])
+    num_batches_per_epoch = int((len(validation['new_name']) - 1) / batch_size) + 1
+    for batch_num in range(num_batches_per_epoch):
+        train_start = batch_num * batch_size
+        train_end = min((batch_num + 1) * batch_size, data_size)
+        validate_images = []
+
+        for row in validation['new_name'][train_start:train_end]:
+
+            if row['label'] == 0: path = dir + '0/' + row['new_name']
+            else: path = dir + '1/' + row['new_name']
+
+            try:
+                img = image.load_img(path, target_size=(224, 224))
+            except OSError or AttributeError:
+                img = np.zeros(shape=(224, 224, 3))
+
+            x = image.img_to_array(img)
+            x = imagenet_scale(x)
+            x = np.expand_dims(x, axis=0)
+            x = preprocess_input(x)
+            validate_images.extend(x)
+        yield np.array(validate_images)
 
 def get_model():
     input_image = Input(shape=(224, 224, 3), name='image_input')
@@ -114,24 +139,75 @@ def get_model():
     return res_model
 
 
-model = get_model()
-weights_path = '/home/yph/weights'
-if os.path.exists(weights_path):
-    print('---------loading weights---------------')
-    model.load_weights(weights_path)
-    print('---------loading success---------------')
+# model = get_model()
+# weights_path = '/home/yph/weights'
+# if os.path.exists(weights_path):
+#     print('---------loading weights---------------')
+#     model.load_weights(weights_path)
+#     print('---------loading success---------------')
+#
+# else:
+#     steps_per_epoch = int((len(image_label_df) - 1) / image_batch_size) + 1
+#     checkpoint = ModelCheckpoint(filepath='/home/yph/checkpoint/', monitor='loss', verbose=0, save_best_only=True, mode='auto', period=1)
+#     model.fit_generator(batch_iter(image_dir, image_label_df, image_batch_size, epochs=10), steps_per_epoch=steps_per_epoch, epochs=10)
+#     model.save_weights(filepath=weights_path)
+#
+# predict_dir = '/home/zzc/cool/data/sohu/Pic_info_validate/'
+# image_nolabel_df = pd.read_csv('../../data/validate_image.csv')
+#
+# steps = int((len(image_nolabel_df) - 1) / image_batch_size) + 1
+# predict = model.predict_generator(predict_batch_iter(predict_dir, image_nolabel_df, image_batch_size), steps=steps)
+#
+# image_nolabel_df['label'] = predict
+# image_nolabel_df.to_csv('/home/yph/test_validate_images_predict.csv', index=False)
 
-else:
-    steps_per_epoch = int((len(image_label_df) - 1) / image_batch_size) + 1
-    checkpoint = ModelCheckpoint(filepath='/home/yph/checkpoint/', monitor='loss', verbose=0, save_best_only=True, mode='auto', period=1)
-    model.fit_generator(batch_iter(image_dir, image_label_df, image_batch_size, epochs=10), steps_per_epoch=steps_per_epoch, epochs=10)
-    model.save_weights(filepath=weights_path)
 
-predict_dir = '/home/zzc/cool/data/sohu/Pic_info_validate/'
-image_nolabel_df = pd.read_csv('../../data/validate_image.csv')
+# k折交叉检验
+image_label_df_size = len(image_label_df)
+validation_ratio = 3
 
-steps = int((len(image_nolabel_df) - 1) / image_batch_size) + 1
-predict = model.predict_generator(predict_batch_iter(predict_dir, image_nolabel_df, image_batch_size), steps=steps)
+positive_image_label_df = image_label_df[image_label_df[image_label_column_name] == 0]
+negative_image_label_df = image_label_df[image_label_df[image_label_column_name] == 1]
+positive_image_label_df_size = len(positive_image_label_df)
+negative_image_label_df_size = len(negative_image_label_df)
+positive_validation_size = int(positive_image_label_df_size / validation_ratio)
+negative_validation_size = int(negative_image_label_df_size / validation_ratio)
 
-image_nolabel_df['label'] = predict
-image_nolabel_df.to_csv('/home/yph/validate_images_predict.csv', index=False)
+acc = []
+for i in range(validation_ratio):
+    validation_positive_image_label_df = positive_image_label_df[i * positive_validation_size:min((i + 1) * positive_validation_size, positive_image_label_df_size)]
+    validation_negative_image_label_df = negative_image_label_df[i * negative_validation_size:min((i + 1) * negative_validation_size, negative_image_label_df_size)]
+    train_positive_image_label_df = pd.concat([positive_image_label_df[:i * positive_validation_size],
+                                               positive_image_label_df[(i + 1) * positive_validation_size:]])
+    train_negative_image_label_df = pd.concat([negative_image_label_df[:i * negative_validation_size],
+                                               negative_image_label_df[(i + 1) * negative_validation_size:]])
+
+    train_image_label_df = pd.concat([train_positive_image_label_df, train_negative_image_label_df])
+    validation_image_label_df = pd.concat([validation_positive_image_label_df, validation_negative_image_label_df])
+
+    print('-------No.%d开始训练-----------'% i)
+    model = get_model()
+    steps_per_epoch = int((len(train_image_label_df) - 1) / image_batch_size) + 1
+    # checkpoint = ModelCheckpoint(filepath='/home/yph/checkpoint/', monitor='loss', verbose=0, save_best_only=True, mode='auto', period=1)
+    model.fit_generator(batch_iter(image_dir, train_image_label_df, image_batch_size, epochs=10), steps_per_epoch=steps_per_epoch, epochs=10)
+    weights = weights + str(i)
+    model.save_weights(filepath=weights)
+
+    print('-------No.%d训练结束-----------'% i)
+
+    validation_dir = '/home/zzc/cool/data/sohu/train/'
+    steps = int((len(validation_image_label_df) - 1) / image_batch_size) + 1
+    predict = model.predict_generator(validation_batch_iter(validation_dir, validation_image_label_df, image_batch_size), steps=steps)
+
+    cont = 0.0
+    for (label, predict_label) in zip(validation_image_label_df['label'], predict):
+        if (label == 1 and predict_label >= 0.5) or (label == 0 and predict_label < 0.5): cont += 1
+
+    acc.append(cont / len(validation_image_label_df))
+    print('-------No.%d: validation_size:%d', len(validation_image_label_df))
+    print('-------No.%d: acc:%lf----------'%(i, acc[-1]))
+
+print('avg acc: %lf'%(sum(acc) / len(acc)))
+
+
+

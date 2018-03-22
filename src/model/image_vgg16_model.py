@@ -143,7 +143,7 @@ def VGG_16():
 
 model = VGG_16()
 sgd = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
-model.compile(optimizer=Adam(0.001, 0.9, 0.999, None, 0.000001),
+model.compile(optimizer=Adam(0.0001, 0.9, 0.999, None),
               loss='binary_crossentropy',
               metrics=['accuracy'])
 steps_per_epoch = int((len(image_label_df) - 1) / image_batch_size) + 1
