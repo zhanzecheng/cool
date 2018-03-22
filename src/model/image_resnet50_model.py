@@ -4,13 +4,15 @@ from keras.layers import Dropout
 from keras.optimizers import Adam
 from keras.applications.resnet50 import ResNet50, preprocess_input
 from keras.preprocessing import image
+from keras.preprocessing.image import ImageDataGenerator
+from keras.callbacks import ModelCheckpoint
 import pandas as pd
 import numpy as np
 import os
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
-image_dir = "/home/zzc/cool/data/sohu/"
+image_dir = "/home/zzc/cool/data/sohu/train/"
 image_input_shape = (224, 224, 3)
 image_batch_size = 32
 image_nums = 0
@@ -54,15 +56,15 @@ def batch_iter(dir, train, batch_size, epochs, shuffle=True):
             for name in shuffle_image_name[train_start:train_end]:
                 path = ''
 
-                for i in ['positive', 'negative']:
-                    tmp_path = dir + i + '/' + name
+                for i in range(0, 2):
+                    tmp_path = dir + '/' + str(i) + name
                     if os.path.exists(tmp_path):
                         path = tmp_path
                         break
 
                 try:
                     img = image.load_img(path, target_size=(224, 224))
-                except OSError:
+                except OSError or AttributeError:
                     img = np.zeros(shape=(224, 224, 3))
 
                 x = image.img_to_array(img)
@@ -72,6 +74,31 @@ def batch_iter(dir, train, batch_size, epochs, shuffle=True):
                 train_image.extend(x)
 
             yield (np.array(train_image), shuffle_image_label[train_start:train_end])
+
+
+def predict_batch_iter(dir, test, batch_size):
+    """ Generates a batch iterator"""
+    data_size = len(test['image_name'])
+    num_batches_per_epoch = int((len(test['image_name']) - 1) / batch_size) + 1
+    for batch_num in range(num_batches_per_epoch):
+        train_start = batch_num * batch_size
+        train_end = min((batch_num + 1) * batch_size, data_size)
+        validate_images = []
+
+        for name in test['image_name'][train_start:train_end]:
+            path = dir + name
+
+            try:
+                img = image.load_img(path, target_size=(224, 224))
+            except OSError or AttributeError:
+                img = np.zeros(shape=(224, 224, 3))
+
+            x = image.img_to_array(img)
+            x = imagenet_scale(x)
+            x = np.expand_dims(x, axis=0)
+            x = preprocess_input(x)
+            validate_images.extend(x)
+        yield np.array(validate_images)
 
 
 def get_model():
@@ -88,12 +115,23 @@ def get_model():
 
 
 model = get_model()
-steps_per_epoch = int((len(image_label_df) - 1) / image_batch_size) + 1
-model.fit_generator(batch_iter(image_dir, image_label_df, image_batch_size, epochs=10), steps_per_epoch=steps_per_epoch, epochs=10)
-model.save_weights(filepath='/home/yph/weights')
+weights_path = '/home/yph/weights'
+if os.path.exists(weights_path):
+    print('---------loading weights---------------')
+    model.load_weights(weights_path)
+    print('---------loading success---------------')
 
+else:
+    steps_per_epoch = int((len(image_label_df) - 1) / image_batch_size) + 1
+    checkpoint = ModelCheckpoint(filepath='/home/yph/checkpoint/', monitor='loss', verbose=0, save_best_only=True, mode='auto', period=1)
+    model.fit_generator(batch_iter(image_dir, image_label_df, image_batch_size, epochs=10), steps_per_epoch=steps_per_epoch, epochs=10)
+    model.save_weights(filepath=weights_path)
 
+predict_dir = '/home/zzc/cool/data/sohu/Pic_info_validate/'
+image_nolabel_df = pd.read_csv('../../data/validate_image.csv')
 
+steps = int((len(image_nolabel_df) - 1) / image_batch_size) + 1
+predict = model.predict_generator(predict_batch_iter(predict_dir, image_nolabel_df, image_batch_size), steps=steps)
 
-
-
+image_nolabel_df['label'] = predict
+image_nolabel_df.to_csv('/home/yph/validate_images_predict.csv', index=False)
