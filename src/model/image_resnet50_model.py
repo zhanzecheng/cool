@@ -8,6 +8,7 @@ from keras.preprocessing.image import ImageDataGenerator
 from keras.callbacks import ModelCheckpoint
 import pandas as pd
 import numpy as np
+import math
 import os
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -57,7 +58,7 @@ def batch_iter(dir, train, batch_size, epochs, shuffle=True):
                 path = ''
 
                 for i in range(0, 2):
-                    tmp_path = dir + '/' + str(i) + name
+                    tmp_path = dir + str(int(i)) + '/' + name
                     if os.path.exists(tmp_path):
                         path = tmp_path
                         break
@@ -182,8 +183,8 @@ for i in range(validation_ratio):
     train_negative_image_label_df = pd.concat([negative_image_label_df[:i * negative_validation_size],
                                                negative_image_label_df[(i + 1) * negative_validation_size:]])
 
-    train_image_label_df = pd.concat([train_positive_image_label_df, train_negative_image_label_df])
-    validation_image_label_df = pd.concat([validation_positive_image_label_df, validation_negative_image_label_df])
+    train_image_label_df = pd.concat([train_positive_image_label_df, train_negative_image_label_df]).reset_index(drop=True)
+    validation_image_label_df = pd.concat([validation_positive_image_label_df, validation_negative_image_label_df]).reset_index(drop=True)
 
     print('-------No.%d开始训练-----------'% i)
     model = get_model()
