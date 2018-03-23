@@ -20,6 +20,7 @@ image_nums = 0
 image_label_file = "../../data/image_label_2.csv"
 
 image_label_df = pd.read_csv(image_label_file)
+# image_label_df = pd.concat([image_label_df[:100], image_label_df[-100:]])
 
 # image_label_df = image_label_df.head(1000)
 
@@ -110,10 +111,10 @@ def validation_batch_iter(dir, validation, batch_size):
         train_end = min((batch_num + 1) * batch_size, data_size)
         validate_images = []
 
-        for row in validation['new_name'][train_start:train_end]:
+        for i in range(train_start, train_end):
 
-            if row['label'] == 0: path = dir + '0/' + row['new_name']
-            else: path = dir + '1/' + row['new_name']
+            if validation.iloc[i]['label'] == 0: path = dir + '0/' + validation.iloc[i]['new_name']
+            else: path = dir + '1/' + validation.iloc[i]['new_name']
 
             try:
                 img = image.load_img(path, target_size=(224, 224))
@@ -191,8 +192,8 @@ for i in range(validation_ratio):
     steps_per_epoch = int((len(train_image_label_df) - 1) / image_batch_size) + 1
     # checkpoint = ModelCheckpoint(filepath='/home/yph/checkpoint/', monitor='loss', verbose=0, save_best_only=True, mode='auto', period=1)
     model.fit_generator(batch_iter(image_dir, train_image_label_df, image_batch_size, epochs=10), steps_per_epoch=steps_per_epoch, epochs=10)
-    weights = weights + str(i)
-    model.save_weights(filepath=weights)
+    weights_path = '/home/yph/weights'
+    model.save_weights(filepath=weights_path + str(i))
 
     print('-------No.%d训练结束-----------'% i)
 
