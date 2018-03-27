@@ -4,19 +4,20 @@ from keras.layers import Dropout
 from keras.optimizers import Adam
 from keras.applications.resnet50 import ResNet50, preprocess_input
 from keras.preprocessing import image
-from keras.preprocessing.image import ImageDataGenerator
-from keras.callbacks import ModelCheckpoint
+from keras.callbacks import EarlyStopping
 import pandas as pd
 import numpy as np
+import tqdm
 import os
+import glob
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
-image_dir = "/home/zzc/cool/data/sohu/train/"
+image_dir = "/home/zzc/cool/data/sohu/train_images_label1/"
 image_input_shape = (224, 224, 3)
 image_batch_size = 32
 image_nums = 0
-image_label_file = "../../data/image_label_2.csv"
+image_label_file = "../../data/image_label.csv"
 
 image_label_df = pd.read_csv(image_label_file)
 
@@ -54,14 +55,7 @@ def batch_iter(dir, train, batch_size, epochs, shuffle=True):
             train_image = []
 
             for name in shuffle_image_name[train_start:train_end]:
-                path = ''
-
-                for i in range(0, 2):
-                    tmp_path = dir + '/' + str(i) + name
-                    if os.path.exists(tmp_path):
-                        path = tmp_path
-                        break
-
+                path = name
                 try:
                     img = image.load_img(path, target_size=(224, 224))
                 except OSError or AttributeError:
@@ -115,23 +109,70 @@ def get_model():
 
 
 model = get_model()
-weights_path = '/home/yph/weights'
+weights_path = '/home/yph/weights_label1'
 if os.path.exists(weights_path):
     print('---------loading weights---------------')
     model.load_weights(weights_path)
     print('---------loading success---------------')
-
 else:
-    steps_per_epoch = int((len(image_label_df) - 1) / image_batch_size) + 1
-    checkpoint = ModelCheckpoint(filepath='/home/yph/checkpoint/', monitor='loss', verbose=0, save_best_only=True, mode='auto', period=1)
-    model.fit_generator(batch_iter(image_dir, image_label_df, image_batch_size, epochs=10), steps_per_epoch=steps_per_epoch, epochs=10)
-    model.save_weights(filepath=weights_path)
+    label_1_image_file = '/home/zzc/cool/data/label_1_image.csv'
 
-predict_dir = '/home/zzc/cool/data/sohu/Pic_info_validate/'
-image_nolabel_df = pd.read_csv('../../data/validate_image.csv')
+    positive_filenames = glob.glob(image_dir + '0/*')
 
-steps = int((len(image_nolabel_df) - 1) / image_batch_size) + 1
-predict = model.predict_generator(predict_batch_iter(predict_dir, image_nolabel_df, image_batch_size), steps=steps)
+    # positive_filenames = positive_filenames[:100]
 
-image_nolabel_df['label'] = predict
-image_nolabel_df.to_csv('/home/yph/validate_images_predict.csv', index=False)
+    positive_image_label_df = pd.DataFrame({'new_name': positive_filenames, 'label': [0] * len(positive_filenames)})
+
+    negative_filenames = glob.glob(image_dir + '1/*.*')
+    negative_filenames = negative_filenames + glob.glob(image_dir + '1/aug/*')
+
+    # negative_filenames = negative_filenames[:10]
+
+    negative_image_label_df = pd.DataFrame({'new_name': negative_filenames, 'label': [1] * len(negative_filenames)})
+
+    validation_ratio = 5
+    positive_image_label_df_size = len(positive_image_label_df)
+    negative_image_label_df_size = len(negative_image_label_df)
+    positive_validation_size = int(positive_image_label_df_size / validation_ratio)
+    negative_validation_size = int(negative_image_label_df_size / validation_ratio)
+
+    for i in range(0, 1):
+        validation_positive_image_label_df = positive_image_label_df[i * positive_validation_size:min((i + 1) * positive_validation_size, positive_image_label_df_size)]
+        validation_negative_image_label_df = negative_image_label_df[i * negative_validation_size:min((i + 1) * negative_validation_size, negative_image_label_df_size)]
+        train_positive_image_label_df = pd.concat([positive_image_label_df[:i * positive_validation_size], positive_image_label_df[(i + 1) * positive_validation_size:]])
+        train_negative_image_label_df = pd.concat([negative_image_label_df[:i * negative_validation_size], negative_image_label_df[(i + 1) * negative_validation_size:]])
+
+        train_image_label_df = pd.concat([train_positive_image_label_df, train_negative_image_label_df]).reset_index(drop=True)
+        validation_image_label_df = pd.concat([validation_positive_image_label_df, validation_negative_image_label_df]).reset_index(drop=True)
+
+        model = get_model()
+        steps_per_epoch = int((len(train_image_label_df) - 1) / image_batch_size) + 1
+
+        validation_image = []
+        for name in tqdm.tqdm(validation_image_label_df['new_name']):
+            path = name
+            try:
+                img = image.load_img(path, target_size=(224, 224))
+            except OSError or AttributeError:
+                img = np.zeros(shape=(224, 224, 3))
+            x = image.img_to_array(img)
+            x = imagenet_scale(x)
+            # x = np.expand_dims(x, axis=0)
+            x = preprocess_input(x)
+            validation_image.append(x)
+
+        earlystop = EarlyStopping(monitor='val_loss', patience=6, verbose=1, mode='min')
+
+        model.fit_generator(batch_iter(image_dir, train_image_label_df, image_batch_size, epochs=10),
+                            validation_data=(np.asarray(validation_image),
+                                             np.asarray(validation_image_label_df['label'])),
+                            steps_per_epoch=steps_per_epoch, epochs=10, callbacks=[earlystop])
+        model.save_weights(filepath=weights_path)
+
+        predict_dir = '/home/zzc/cool/data/sohu/Pic_info_validate/'
+        image_nolabel_df = pd.read_csv('../../data/validate_image.csv')
+        steps = int((len(image_nolabel_df) - 1) / image_batch_size) + 1
+        predict = model.predict_generator(predict_batch_iter(predict_dir, image_nolabel_df, image_batch_size), steps=steps)
+
+        image_nolabel_df['label'] = predict
+        image_nolabel_df.to_csv('/home/yph/validate_images_predict.csv', index=False)
