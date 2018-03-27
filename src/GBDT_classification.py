@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-# @Time    : 2018/3/25 下午10:37
-# @File    : catboost_classification.py
+# @Time    : 2018/3/27 下午1:35
+# @File    : GBDT_classification.py
 
 import pickle
 import numpy as np
@@ -25,7 +25,8 @@ from sklearn.model_selection import KFold
 from sklearn.metrics import roc_auc_score, accuracy_score
 from sklearn.multiclass import OneVsOneClassifier
 from sklearn.model_selection import GridSearchCV
-from catboost import CatBoostClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn import cross_validation, metrics
 
 PREDICT_FILE = '../data/Text_Predict.txt'
 TEXT_X = '../data/News_cut_validate_text.txt'
@@ -220,7 +221,7 @@ for train_index, test_index in kf.split(train_x):
     test_data = train_x[test_index]
     test_label = train_y[test_index]
 
-    model = CatBoostClassifier(loss_function='MultiClassOneVsAll', learning_rate=0.01, depth=10)
+    model = GradientBoostingClassifier()
     model.fit(train_data, train_label)
 
     preds_class = model.predict_proba(test_data)
@@ -242,11 +243,11 @@ for train_index, test_index in kf.split(train_x):
 
 print('total scores is: ', np.mean(scores))
 
-with open(SAVE_RESULT_PATH + 'catboost_oof_' + str(np.mean(scores)) + '.txt', 'wb') as f:
+with open(SAVE_RESULT_PATH + 'GBDT_oof_' + str(np.mean(scores)) + '.txt', 'wb') as f:
     pickle.dump(oof_predict, f)
 
 
-with open(SAVE_RESULT_PATH + 'catboost_pred_' +str(np.mean(scores)) + '.txt', 'wb') as f:
+with open(SAVE_RESULT_PATH + 'GBDT_pred_' +str(np.mean(scores)) + '.txt', 'wb') as f:
     pickle.dump(predict, f)
 
 print('done')

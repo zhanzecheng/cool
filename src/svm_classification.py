@@ -24,6 +24,7 @@ from sklearn.svm import SVC
 from sklearn.model_selection import KFold
 from sklearn.metrics import roc_auc_score, accuracy_score
 from sklearn.multiclass import OneVsOneClassifier
+from sklearn.model_selection import GridSearchCV
 
 PREDICT_FILE = '../data/Text_Predict.txt'
 TEXT_X = '../data/News_cut_validate_text.txt'
@@ -131,7 +132,7 @@ features = scaler.fit_transform(features)
 train_x = np.asarray(train_x)
 train_y = np.asarray(train_y)
 
-with open('../data/train_x_500.pkl', 'rb') as f:
+with open('../data/train_x_250.pkl', 'rb') as f:
     train_x = pickle.load(f)
 # with open('../data/train_x_500.pkl', 'wb') as f:
 #     pickle.dump(train_x, f)
@@ -147,6 +148,10 @@ print('train_x size: ', np.shape(train_x))
 print('train_y size: ', np.shape(train_y))
 
 
+# grid = GridSearchCV(SVC(), param_grid={"C":[0.1, 1, 10], "gamma": [1, 0.1, 0.01]}, cv=4)
+# grid.fit(train_x, train_y)
+# print("The best parameters are %s with a score of %0.2f"
+#       % (grid.best_params_, grid.best_score_))
 
 oof_predict = np.zeros((train_x.shape[0], 1))
 num_folds = 5
@@ -165,7 +170,7 @@ for train_index, test_index in kf.split(train_x):
     kfold_X_test = train_x[test_index]
 
     # 训练model
-    svc_model = OneVsOneClassifier(SVC(kernel='linear', class_weight='balanced'))
+    svc_model = SVC(kernel='linear', class_weight='balanced')
     svc_model.fit(kfold_X_train, y_train)
 
     # predict += model.predict(X_test, batch_size=1000) / num_folds
@@ -177,7 +182,7 @@ for train_index, test_index in kf.split(train_x):
     # # 评价函数，这里应该是accurancy
     # print('y_train', y_train)
     cv_score = accuracy_score(y_test, oof_predict[test_index])
-    #
+
     scores.append(cv_score)
     print('score: ', cv_score)
 
