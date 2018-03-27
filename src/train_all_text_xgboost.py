@@ -14,7 +14,8 @@ from sklearn.feature_extraction.text import (
     TfidfVectorizer)
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-
+from sklearn.decomposition import TruncatedSVD
+SAVE_RESULT_PATH = '../data/result/'
 PREDICT_FILE = '../data/Text_Predict.txt'
 TEXT_X = '../data/News_cut_validate_text.txt'
 SAVE_DICT = '../data/word_dict.pkl'
@@ -27,11 +28,6 @@ TEST_FILE = '../data/All_validate_file.txt'
 FEATURES_FILE = '../data/train_text_feature.csv'
 FEATURES_test_FILE = '../data/test_text_feature.csv'
 STOP_WORD_FILE = '../data/stopword.txt'
-######## define some hyper ##########
-EMBED_SIZES = 300
-MAX_LEN = 1000
-BATCH_SIZE = 64
-EPOCH = 10
 
 #####################################
 train_x = []
@@ -39,12 +35,25 @@ train_y = []
 test_x = []
 all_x = []
 
-# with open('../data/images_features.pkl', 'rb') as f:
-#     images_features = np.array(pickle.load(f), dtype=np.float32)
-# print(type(images_features))
-# print('images shape is', images_features.shape)
+# load and depoment images_features train
+with open('../data/images_features10.pkl', 'rb') as f:
+    images_features = np.array(pickle.load(f), dtype=np.float32)
+print(type(images_features))
+print('images shape is', images_features.shape)
 
+images_features = images_features.reshape((images_features.shape[0], -1))
+print('images reshape is', images_features.shape)
+# svd = TruncatedSVD(n_components=2000)
+# images_features = svd.fit_transform(images_features)
+# load and depoment images_features test
 
+# with open('../data/images_features10_validate.pkl', 'rb') as f:
+#     test_images_features = np.array(pickle.load(f), dtype=np.float32)
+# print(type(test_images_features))
+# print('images shape is', test_images_features.shape)
+#
+# test_images_features = test_images_features.reshape((test_images_features.shape[0], -1))
+# test_images_features = svd.transform(test_images_features)
 
 
 
@@ -122,13 +131,13 @@ train_y = np.asarray(train_y)
 print('train_x shape is: ', train_x.shape)
 print('train_y shape is: ', train_y.shape)
 # vectorizer text
-
-vectorizer = TfidfVectorizer(ngram_range=(1,2),
-                             stop_words=STOP_WORD,
-                             sublinear_tf=True,
-                             use_idf=True,
-                             norm='l2',
-                             max_features=10000)
+#
+# vectorizer = TfidfVectorizer(ngram_range=(1,2),
+#                              stop_words=STOP_WORD,
+#                              sublinear_tf=True,
+#                              use_idf=True,
+#                              norm='l2',
+#                              max_features=10000)
 
 # LSA Pipeline
 # svd = TruncatedSVD(n_components=250)
@@ -140,10 +149,10 @@ vectorizer = TfidfVectorizer(ngram_range=(1,2),
 # train_x = lsa.transform(train_x)
 # test_x = lsa.transform(test_x)
 # print('end_transform')
-with open('../data/train_x_500.pkl', 'rb') as f:
+with open('../data/train_x_250.pkl', 'rb') as f:
     train_x = pickle.load(f)
 
-with open('../data/test_x_500.pkl', 'rb') as f:
+with open('../data/test_x_250.pkl', 'rb') as f:
     test_x = pickle.load(f)
 #
 # with open('../data/train_x_250.pkl', 'wb') as f:
@@ -164,18 +173,18 @@ xgb_params ={
     'updater': 'grow_gpu',
     'booster': 'gbtree',
     'lambda': 0.1,
-    'gamma': 4,
-    'max_depth': 6,
+    'gamma': 0.7,
+    'max_depth': 7,
     'nthread': -1,
     'subsample': 0.5,
     'silent': 0,
     'eta': 0.01,
     'scale_pos_weight': 1,
-    'gpu_id': 2,
-    'alpha': 0.01,
-    'colsample_bytree': 0.5,
+    'gpu_id': 3,
+    'alpha': 0.1,
+    'colsample_bytree': 0.8,
     'min_child_weight': 1,
-    'objective': 'multi:softmax',
+    'objective': 'multi:softprob',
     'num_class': 3,
     }
 
@@ -184,13 +193,28 @@ num_folds = 4
 
 scores = []
 kf = KFold(n_splits=num_folds, shuffle=True, random_state=239)
+predict = np.zeros((test_x.shape[0], 3))
+oof_predict = np.zeros((train_x.shape[0], 3))
+
+ddtest = xgb.DMatrix(test_x)
+
+def check_accuracy(pred, label):
+    right = 0
+    total = len(pred)
+    for count, re in enumerate(pred):
+        flag = np.argmax(re)
+        if int(flag) == int(label[count]):
+            right += 1
+    return right / total
+
+# ids = []
 for train_index, test_index in kf.split(train_x):
     # 按照8：2的比例分成训练集和验证集
     y_train, y_test = train_y[train_index], train_y[test_index]
 
     kfold_X_train = train_x[train_index]
     kfold_X_valid = train_x[test_index]
-
+    # train_id = ids
 
 
     dtrain = xgb.DMatrix(kfold_X_train, label=y_train)
@@ -200,13 +224,29 @@ for train_index, test_index in kf.split(train_x):
 
     best= xgb.train(xgb_params, dtrain, 2000, watchlist, verbose_eval=100, early_stopping_rounds=150)
 
+    # 对验证集predict
     pred = best.predict(dvalid)
-    accuracy_rate = (np.sum(pred == y_test))/ y_test.shape[0]
+    # 对验证集的predict结果做accuracy评分
+    accuracy_rate = check_accuracy(pred, y_test)
     print('Test error using softmax = {}'.format(accuracy_rate))
+
+    results = best.predict(ddtest)
+    predict += results / num_folds
+
+    oof_predict[test_index] = pred
+
     scores.append(accuracy_rate)
 
 print('total scores is ', np.mean(scores))
 
+# dtrain = xgb.DMatrix(train_x, label=train_y)
+# best= xgb.train(xgb_params, dtrain, 800, verbose_eval=100)
+# predict = best.predict(ddtest)
+with open(SAVE_RESULT_PATH + 'xgboost_change_oof_' + str(np.mean(scores)) + '.txt', 'wb') as f:
+    pickle.dump(oof_predict, f)
 
 
+with open(SAVE_RESULT_PATH + 'xgboost_change_pred_' + '.txt', 'wb') as f:
+    pickle.dump(predict, f)
 
+print('done')
